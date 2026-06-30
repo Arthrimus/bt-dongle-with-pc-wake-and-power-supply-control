@@ -1,32 +1,24 @@
-# Pico USB Bluetooth HCI Wake
+# Pico 2 W USB Bluetooth HCI Wake Dongle
 
-Firmware for a Raspberry Pi Pico-class board that exposes a native USB Bluetooth HCI dongle and PC wake controller.
-
-Primary Pico 2 W path:
+Firmware for a Raspberry Pi Pico 2 W that acts as a USB Bluetooth HCI dongle and PC wake controller. The main path uses the Pico 2 W's onboard CYW43 Bluetooth controller:
 
 ```text
 PC USB host -> Pico TinyUSB Bluetooth HCI device -> onboard CYW43 Bluetooth controller
 ```
 
-External ESP32 path:
+The original Pico + external ESP32 UART-HCI backend is still available, but it is now a secondary hardware path documented in [ESP32 HCI UART Backend](docs/esp32_hci_uart.md).
 
-```text
-PC USB host -> Pico TinyUSB Bluetooth HCI device -> UART H4 -> ESP32 controller_hci_uart_esp32
-```
+## What It Does
 
-## Current Focus
+- Exposes a native USB Bluetooth HCI controller using TinyUSB's BTH device class.
+- Bridges USB HCI command, event, and ACL traffic to the Pico 2 W onboard CYW43 Bluetooth controller.
+- Uses standby HCI host mode to scan for Bluetooth/BLE wake signals while the PC is off or asleep.
+- Can pulse a PC power-button circuit for wake.
+- Persists learned BLE wake peers in flash and lets you clear that allowlist by holding BOOTSEL.
 
-- Pico 2 W onboard CYW43 HCI backend.
-- Pico + external ESP32 HCI UART backend retained for the original hardware.
-- Native USB Bluetooth HCI class via TinyUSB's BTH device class.
-- H4 UART parser for events, ACL, and SCO packet boundaries.
-- USB command/event/ACL bridge.
-- Standby HCI host scaffold for BLE advertisement wake.
-- PC power-button pulse supervisor scaffold.
+SCO/iso endpoints are left in the USB descriptor because TinyUSB's premade BTH descriptor includes the companion interface expected by the Bluetooth USB transport shape. The bundled TinyUSB BTH class exposes command, ACL, and event callbacks/APIs; this project keeps packet parsing SCO-aware, but full SCO data pass-through will need either a TinyUSB BTH extension or a local BTH class driver with isochronous transfer callbacks.
 
-SCO/iso endpoints are left in the USB descriptor because TinyUSB's premade BTH descriptor includes the companion interface expected by the Bluetooth USB transport shape. The bundled TinyUSB BTH class exposes command, ACL, and event callbacks/APIs; this project keeps the H4 parser SCO-aware, but full SCO data pass-through will need either a TinyUSB BTH extension or a local BTH class driver with isochronous transfer callbacks.
-
-## Pico 2 W Hardware Pins
+## Pico 2 W Pins
 
 The onboard wireless chip is connected internally. Do not use Pico 2 W GPIO `23`, `24`, `25`, or `29` for front-panel wiring; those are used by CYW43.
 
@@ -39,7 +31,9 @@ Recommended bench/front-panel pins:
 | USB VBUS sense | -1 | Disabled by default; USB is assumed present. |
 | Status LED | -1 | Disabled by default; Pico 2 W onboard LED is not a normal GPIO. |
 
-Build for the onboard CYW43 path:
+## Build
+
+For the normal Pico 2 W front-panel build:
 
 ```powershell
 cd C:\Users\zheku\pico-usb-bt-wake
@@ -47,37 +41,14 @@ cmake -S . -B build-pico2w -G Ninja -DHCI_BACKEND=cyw43 -DPICO_BOARD=pico2_w -DP
 cmake --build build-pico2w
 ```
 
-## ESP32 Hardware Pins
-
-The HCI pins match the existing repo defaults:
-
-| Signal | Pico GPIO |
-| --- | ---: |
-| Pico UART TX -> ESP32 UART RX | 4 |
-| Pico UART RX <- ESP32 UART TX | 5 |
-| Pico CTS <- ESP32 RTS | 6 |
-| Pico RTS -> ESP32 CTS | 7 |
-
-UART defaults to `uart1`, `921600`, `8N1`, with RTS/CTS hardware flow control enabled.
-
-The old SPI audio-offload pins may remain physically attached. This firmware does not configure GPIO `16-20` as SPI, so they remain idle unless you explicitly reuse them for supervisor pins.
-
-## Build
+For pure USB Bluetooth descriptor bring-up, disable the power sense input so the dongle stays attached:
 
 ```powershell
-cd C:\Users\zheku\pico-usb-bt-wake
-cmake -S . -B build -G Ninja -DHCI_BACKEND=cyw43 -DPICO_BOARD=pico2_w
-cmake --build build
+cmake -S . -B build-pico2w-linux-test -G Ninja -DHCI_BACKEND=cyw43 -DPICO_BOARD=pico2_w -DPIN_PWR_OK_SENSE=-1 -DPIN_PWR_BUTTON_OUT=-1 -DENABLE_POWER_BUTTON_WAKE=OFF
+cmake --build build-pico2w-linux-test
 ```
 
-For the original Pico + ESP32 UART hardware:
-
-```powershell
-cmake -S . -B build-esp32 -G Ninja -DHCI_BACKEND=esp32_uart -DPICO_BOARD=pico2
-cmake --build build-esp32
-```
-
-For descriptor-only bring-up:
+For descriptor-only firmware without a real Bluetooth controller backend:
 
 ```powershell
 cmake -S . -B build-stub -G Ninja -DHCI_BACKEND=stub -DPICO_BOARD=pico2
@@ -88,24 +59,27 @@ If the Pico SDK is not found automatically, set `PICO_SDK_PATH`.
 
 ## Useful Options
 
-- `-DHCI_BACKEND=esp32_uart`, `stub`, or `cyw43`
-- `-DENABLE_CDC_DEBUG=ON`
-- `-DENABLE_POWER_BUTTON_WAKE=ON` to allow automatic PC power-button pulses
-- `-DENABLE_ACL_DEBUG_LOG=ON` for verbose ACL packet logging during transport debugging
-- `-DENABLE_UART_FLOW_CONTROL=ON`
-- `-DWAKE_ON_KNOWN_BLE_PEER=ON` to wake when a BLE peer learned while the host was on advertises again, enabled by default
-- `-DWAKE_PERSIST_BLE_PEERS=ON` to keep learned BLE wake peers across power cycles, enabled by default
-- `-DENABLE_BOOTSEL_CLEAR_WAKE_PEERS=ON` to clear learned BLE wake peers by holding BOOTSEL, enabled by default
-- `-DWAKE_ON_BLE_DIRECTED_ADV=ON` to wake on BLE directed advertisements, enabled by default
-- `-DWAKE_ON_STADIA_ADV=ON` to wake on Stadia Controller BLE advertisements/scan responses, enabled by default
-- `-DWAKE_ON_CONNECTABLE_BLE_ADV=ON` to wake on any connectable BLE advertisement, noisy but useful for testing
-- `-DWAKE_ON_BLE_HID=ON` to wake on BLE HID service/appearance advertisements
-- `-DWAKE_ON_BLE_CONTROLLER_NAME=ON` to wake on controller-like BLE local names
-- `-DWAKE_ON_ANY_BLE_ADV=ON`
-- `-DPIN_ESP32_RESET=<gpio>`
-- `-DPIN_PWR_OK_SENSE=<gpio>`
-- `-DPIN_USB_VBUS_SENSE=<gpio>`
-- `-DPIN_PWR_BUTTON_OUT=<gpio>`
+- `-DHCI_BACKEND=cyw43` for the Pico 2 W onboard controller.
+- `-DHCI_BACKEND=stub` for descriptor-only bring-up.
+- `-DENABLE_CDC_DEBUG=ON` to expose USB CDC debug serial.
+- `-DENABLE_POWER_BUTTON_WAKE=ON` to allow automatic PC power-button pulses.
+- `-DENABLE_ACL_DEBUG_LOG=ON` for verbose ACL packet logging during transport debugging.
+- `-DWAKE_ON_KNOWN_BLE_PEER=ON` to wake when a BLE peer learned while the host was on advertises again, enabled by default.
+- `-DWAKE_PERSIST_BLE_PEERS=ON` to keep learned BLE wake peers across power cycles, enabled by default.
+- `-DENABLE_BOOTSEL_CLEAR_WAKE_PEERS=ON` to clear learned BLE wake peers by holding BOOTSEL, enabled by default.
+- `-DWAKE_ON_BLE_DIRECTED_ADV=ON` to wake on BLE directed advertisements, enabled by default.
+- `-DWAKE_ON_STADIA_ADV=ON` to wake on Stadia Controller BLE advertisements/scan responses, enabled by default.
+- `-DWAKE_ON_CONNECTABLE_BLE_ADV=ON` to wake on any connectable BLE advertisement, noisy but useful for testing.
+- `-DWAKE_ON_BLE_HID=ON` to wake on BLE HID service/appearance advertisements.
+- `-DWAKE_ON_BLE_CONTROLLER_NAME=ON` to wake on controller-like BLE local names.
+- `-DWAKE_ON_ANY_BLE_ADV=ON` for broad BLE wake testing.
+- `-DPIN_PWR_OK_SENSE=<gpio>` for the PC-on sense input.
+- `-DPIN_USB_VBUS_SENSE=<gpio>` for optional host VBUS sense.
+- `-DPIN_PWR_BUTTON_OUT=<gpio>` for the isolated power-button pulse output.
+
+The ESP32 UART backend has its own wiring and build options in [ESP32 HCI UART Backend](docs/esp32_hci_uart.md).
+
+## Wake Behavior
 
 By default, `PWR_OK` and USB VBUS are assumed present when their pins are `-1`, which makes bench USB dongle bring-up easier. The Pico 2 W front-panel build enables automatic power-button wake when `PIN_PWR_BUTTON_OUT` is set: it releases the pin with pull-up, simulates a press by driving it low for 200 ms, then waits 10 seconds before trusting the power LED/sense input again.
 
@@ -142,4 +116,8 @@ $p.Close()
 
 ## References
 
+- [Hardware wiring](docs/hardware_wiring.md)
 - [Linux HCI transport reference](docs/linux_hci_transport_reference.md)
+- [Linux test plan](docs/linux_test_plan.md)
+- [Standby HCI host mode](docs/standby_hci_host_mode.md)
+- [Troubleshooting](docs/troubleshooting.md)
