@@ -15,11 +15,11 @@ Check `lsusb -v` and confirm the Bluetooth interface class tuple:
 0xe0 / 0x01 / 0x01
 ```
 
-Build the stub backend first to separate descriptor issues from UART/controller issues.
+Build the stub backend first to separate descriptor issues from controller/backend issues.
 
-## HCI Timeouts
+## ESP32 HCI UART Timeouts
 
-Verify the ESP32 controller firmware directly with a USB-UART adapter and `btattach` before inserting the Pico bridge.
+For the secondary Pico + ESP32 UART-HCI route, first check [ESP32 HCI UART Backend](esp32_hci_uart.md). Verify the ESP32 controller firmware directly with a USB-UART adapter and `btattach` before inserting the Pico bridge.
 
 Common causes:
 

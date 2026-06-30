@@ -21,22 +21,6 @@ default build also has a HID keyboard interface
 btusb attempts to bind
 ```
 
-## ESP32 UART Bring-Up
+## ESP32 UART Backend
 
-Flash the ESP32 with Espressif's `controller_hci_uart_esp32` or equivalent H4 controller firmware.
-
-Build:
-
-```bash
-cmake -S . -B build -DHCI_BACKEND=esp32_uart -DPICO_BOARD=pico2
-cmake --build build
-```
-
-Expected:
-
-```text
-BlueZ creates hciX
-bluetoothctl list shows the adapter
-bluetoothctl power on succeeds
-bluetoothctl scan on shows BLE devices
-```
+The Pico + ESP32 UART-HCI path is secondary hardware now. See [ESP32 HCI UART Backend](esp32_hci_uart.md) for wiring and build commands.

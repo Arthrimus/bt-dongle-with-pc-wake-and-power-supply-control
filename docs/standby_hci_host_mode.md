@@ -1,6 +1,6 @@
 # Standby HCI Host Mode
 
-When `PWR_OK` and USB VBUS sense indicate the PC is off, the Pico detaches USB and owns the ESP32 controller directly.
+When `PWR_OK` and USB VBUS sense indicate the PC is off, the Pico detaches USB and owns the Bluetooth controller directly.
 
 Initial sequence:
 
