@@ -7,33 +7,40 @@ USB interfaces:
 - `3-1.3:1.2`: vendor/Wi-Fi interface, bound by `aic8800_fdrv`
 
 To keep the Wi-Fi/vendor interface while hiding only the Bluetooth controller
-from BlueZ, install this udev rule:
+from BlueZ, install a small unbind helper plus a udev rule that runs after USB
+enumeration. This is still needed even with the Wi-Fi-only AIC8800 DKMS package:
+the Tenda device exposes standard Bluetooth USB interfaces, so the kernel
+`btusb` driver can bind them independently of the AIC Wi-Fi driver.
+
+Install the helper:
+
+```sh
+sudo install -D -m 0755 tools/disable-tenda-aic8800-bluetooth.sh /usr/local/libexec/disable-tenda-aic8800-bluetooth
+```
+
+Install the udev rule:
 
 ```udev
-ACTION=="add", SUBSYSTEM=="usb", DRIVERS=="btusb", ATTRS{idVendor}=="2604", ATTRS{idProduct}=="001f", RUN+="/bin/sh -c 'echo %k > /sys/bus/usb/drivers/btusb/unbind'"
+ACTION=="add|bind", SUBSYSTEM=="usb", ATTRS{idVendor}=="2604", ATTRS{idProduct}=="001f", ENV{DEVTYPE}=="usb_interface", RUN+="/usr/bin/systemd-run --no-block --property=Type=oneshot /bin/sh -c 'sleep 1; /usr/local/libexec/disable-tenda-aic8800-bluetooth'"
 ```
 
 Install and apply:
 
 ```sh
-printf '%s\n' 'ACTION=="add", SUBSYSTEM=="usb", DRIVERS=="btusb", ATTRS{idVendor}=="2604", ATTRS{idProduct}=="001f", RUN+="/bin/sh -c '"'"'echo %k > /sys/bus/usb/drivers/btusb/unbind'"'"'"' |
+printf '%s\n' 'ACTION=="add|bind", SUBSYSTEM=="usb", ATTRS{idVendor}=="2604", ATTRS{idProduct}=="001f", ENV{DEVTYPE}=="usb_interface", RUN+="/usr/bin/systemd-run --no-block --property=Type=oneshot /bin/sh -c '"'"'sleep 1; /usr/local/libexec/disable-tenda-aic8800-bluetooth'"'"'"' |
   sudo tee /etc/udev/rules.d/80-disable-tenda-aic8800-bluetooth.rules >/dev/null
 
 sudo udevadm control --reload-rules
-sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=2604 --attr-match=idProduct=001f
+sudo /usr/local/libexec/disable-tenda-aic8800-bluetooth
 ```
 
-If the trigger does not detach the existing Bluetooth interfaces, unplug and
-replug the Tenda adapter, or unbind the current interfaces once:
+Fish shell install/apply:
 
-```sh
-for iface in /sys/bus/usb/devices/*:*; do
-  [ "$(cat "$iface/../idVendor" 2>/dev/null)" = "2604" ] || continue
-  [ "$(cat "$iface/../idProduct" 2>/dev/null)" = "001f" ] || continue
-  [ -e "$iface/driver" ] || continue
-  [ "$(basename "$(readlink "$iface/driver")")" = "btusb" ] || continue
-  echo "$(basename "$iface")" | sudo tee /sys/bus/usb/drivers/btusb/unbind
-done
+```fish
+sudo install -D -m 0755 tools/disable-tenda-aic8800-bluetooth.sh /usr/local/libexec/disable-tenda-aic8800-bluetooth
+printf '%s\n' 'ACTION=="add|bind", SUBSYSTEM=="usb", ATTRS{idVendor}=="2604", ATTRS{idProduct}=="001f", ENV{DEVTYPE}=="usb_interface", RUN+="/usr/bin/systemd-run --no-block --property=Type=oneshot /bin/sh -c '"'"'sleep 1; /usr/local/libexec/disable-tenda-aic8800-bluetooth'"'"'"' | sudo tee /etc/udev/rules.d/80-disable-tenda-aic8800-bluetooth.rules >/dev/null
+sudo udevadm control --reload-rules
+sudo /usr/local/libexec/disable-tenda-aic8800-bluetooth
 ```
 
 Verify:
@@ -50,6 +57,7 @@ Rollback:
 
 ```sh
 sudo rm /etc/udev/rules.d/80-disable-tenda-aic8800-bluetooth.rules
+sudo rm /usr/local/libexec/disable-tenda-aic8800-bluetooth
 sudo udevadm control --reload-rules
 ```
 
