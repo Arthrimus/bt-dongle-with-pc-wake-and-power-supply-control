@@ -4,9 +4,11 @@
 #include "debug_log.h"
 #include "hardware/gpio.h"
 #include "pico/time.h"
+#include "usb_hid_wake.h"
 
 static power_state_t state = POWER_STATE_UNKNOWN;
 static bool wake_requested;
+static bool debug_force_standby;
 static bool pwr_ok_filtered;
 static bool pwr_ok_last_raw;
 static bool usb_vbus_filtered;
@@ -44,6 +46,12 @@ static bool debounce_bool(bool raw, bool *last_raw, bool *filtered, absolute_tim
 }
 
 static void update_power_inputs(void) {
+    if (debug_force_standby) {
+        pwr_ok_last_raw = pwr_ok_filtered = false;
+        usb_vbus_last_raw = usb_vbus_filtered = false;
+        return;
+    }
+
     (void)debounce_bool(pin_read_or_default(PIN_PWR_OK_SENSE, true),
                         &pwr_ok_last_raw, &pwr_ok_filtered, &pwr_ok_changed_at);
     (void)debounce_bool(pin_read_or_default(PIN_USB_VBUS_SENSE, true),
@@ -115,6 +123,21 @@ const char *power_supervisor_last_wake_reason(void) {
     return wake_reason;
 }
 
+void power_supervisor_debug_force_standby(bool force) {
+    debug_force_standby = force;
+    if (force) {
+        pwr_ok_last_raw = pwr_ok_filtered = false;
+        usb_vbus_last_raw = usb_vbus_filtered = false;
+        standby_armed_at = nil_time;
+        wake_requested = false;
+        debug_log("debug force standby enabled");
+    } else {
+        pwr_ok_last_raw = pwr_ok_filtered = pin_read_or_default(PIN_PWR_OK_SENSE, true);
+        usb_vbus_last_raw = usb_vbus_filtered = pin_read_or_default(PIN_USB_VBUS_SENSE, true);
+        debug_log("debug force standby disabled");
+    }
+}
+
 void power_supervisor_pulse_power_button_ms(uint32_t ms) {
 #if PIN_PWR_BUTTON_OUT >= 0
     power_button_press();
@@ -160,21 +183,26 @@ void power_supervisor_task(void) {
             set_state(POWER_STATE_HOST_ON_USB_HCI);
         } else if (wake_requested) {
             wake_requested = false;
-#if ENABLE_POWER_BUTTON_WAKE
+#if ENABLE_POWER_BUTTON_WAKE || ENABLE_STANDBY_HID_KEYBOARD
             set_state(POWER_STATE_WAKE_PULSE);
 #else
-            debug_log("wake ignored with ENABLE_POWER_BUTTON_WAKE=OFF: %s", wake_reason);
+            debug_log("wake ignored with wake outputs disabled: %s", wake_reason);
 #endif
         }
         break;
 
     case POWER_STATE_WAKE_PULSE:
+        usb_hid_wake_request_keypress();
+#if ENABLE_POWER_BUTTON_WAKE
         if (!power_supervisor_pwr_ok()) {
             debug_log("wake pulse: %s", wake_reason);
             power_supervisor_pulse_power_button_ms(POWER_BUTTON_PULSE_MS);
         } else {
             debug_log("wake pulse skipped: sense already high");
         }
+#else
+        debug_log("HID wake key requested: %s", wake_reason);
+#endif
         cooldown_until = make_timeout_time_ms(POST_WAKE_SENSE_SETTLE_MS);
         state_deadline = make_timeout_time_ms(POST_WAKE_SENSE_SETTLE_MS);
         set_state(POWER_STATE_WAIT_WAKE_SENSE_SETTLE);
