@@ -47,6 +47,7 @@ set(PIN_LED_FAULT -1 CACHE STRING "Fault LED GPIO, or -1")
 
 set(ESP32_HCI_UART_ID 1 CACHE STRING "UART peripheral used by ESP32 HCI transport")
 set(ESP32_HCI_UART_BAUD 921600 CACHE STRING "ESP32 HCI UART baud rate")
+set(SYS_CLOCK_KHZ 0 CACHE STRING "Optional system clock in kHz, or 0 for the board/SDK default")
 set(HCI_ACL_MAX_LEN 2048 CACHE STRING "Maximum ACL packet bytes kept in firmware queues")
 set(USB_BTH_EVENT_EPSIZE 64 CACHE STRING "USB HCI event interrupt endpoint size")
 set(USB_BTH_DATA_EPSIZE 64 CACHE STRING "USB HCI ACL bulk endpoint size")
@@ -138,6 +139,7 @@ target_compile_definitions(pico-usb-bt-wake PRIVATE
     PIN_LED_FAULT=${PIN_LED_FAULT}
     ESP32_HCI_UART_ID=${ESP32_HCI_UART_ID}
     ESP32_HCI_UART_BAUD=${ESP32_HCI_UART_BAUD}
+    SYS_CLOCK_KHZ=${SYS_CLOCK_KHZ}
     HCI_ACL_MAX_LEN=${HCI_ACL_MAX_LEN}
     POWER_BUTTON_PULSE_MS=${POWER_BUTTON_PULSE_MS}
     POST_WAKE_SENSE_SETTLE_MS=${POST_WAKE_SENSE_SETTLE_MS}

@@ -62,6 +62,7 @@ If the Pico SDK is not found automatically, set `PICO_SDK_PATH`.
 
 - `-DHCI_BACKEND=cyw43` for the Pico 2 W onboard controller.
 - `-DHCI_BACKEND=stub` for descriptor-only bring-up.
+- `-DSYS_CLOCK_KHZ=200000` to run the RP2350 system clock at 200 MHz; default `0` keeps the board/SDK clock.
 - `-DENABLE_CDC_DEBUG=ON` to expose USB CDC debug serial.
 - `-DENABLE_POWER_BUTTON_WAKE=ON` to allow automatic PC power-button pulses.
 - `-DENABLE_STANDBY_HID_KEYBOARD=ON` to expose a standby USB keyboard wake interface, enabled by default.
