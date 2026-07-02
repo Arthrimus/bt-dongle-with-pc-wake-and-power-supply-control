@@ -6,6 +6,10 @@
 #include "pico/time.h"
 #include "usb_hid_wake.h"
 
+#if HCI_BACKEND_cyw43 && ENABLE_CYW43_STATUS_LED
+#include "pico/cyw43_arch.h"
+#endif
+
 static power_state_t state = POWER_STATE_UNKNOWN;
 static bool wake_requested;
 static bool debug_force_standby;
@@ -29,6 +33,9 @@ static absolute_time_t standby_armed_at;
 #endif
 #ifndef POST_WAKE_SENSE_SETTLE_MS
 #define POST_WAKE_SENSE_SETTLE_MS 10000u
+#endif
+#ifndef STATUS_LED_BLINK_MS
+#define STATUS_LED_BLINK_MS 1000u
 #endif
 
 static bool pin_read_or_default(int pin, bool default_value) {
@@ -54,6 +61,28 @@ static absolute_time_t standby_arm_deadline(void) {
 
 static bool standby_wake_armed(void) {
     return is_nil_time(standby_armed_at) || time_reached(standby_armed_at);
+}
+
+static void status_led_put(bool on) {
+#if PIN_LED_STATUS >= 0
+    gpio_put(PIN_LED_STATUS, on);
+#endif
+#if HCI_BACKEND_cyw43 && ENABLE_CYW43_STATUS_LED && defined(CYW43_WL_GPIO_LED_PIN)
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, on);
+#else
+    (void)on;
+#endif
+}
+
+static void update_status_led(void) {
+    bool on = false;
+    if (state == POWER_STATE_STANDBY_HCI_HOST) {
+        on = true;
+    } else if (state == POWER_STATE_HOST_OFF && !standby_wake_armed()) {
+        uint32_t blink_ms = STATUS_LED_BLINK_MS == 0u ? 1000u : STATUS_LED_BLINK_MS;
+        on = ((to_ms_since_boot(get_absolute_time()) / blink_ms) & 1u) == 0u;
+    }
+    status_led_put(on);
 }
 
 static void update_power_inputs(void) {
@@ -102,6 +131,7 @@ void power_supervisor_init(void) {
 #if PIN_LED_STATUS >= 0
     gpio_init(PIN_LED_STATUS);
     gpio_set_dir(PIN_LED_STATUS, GPIO_OUT);
+    gpio_put(PIN_LED_STATUS, 0);
 #endif
 #if PIN_LED_FAULT >= 0
     gpio_init(PIN_LED_FAULT);
@@ -185,10 +215,6 @@ static void set_state(power_state_t next) {
 void power_supervisor_task(void) {
     update_power_inputs();
 
-#if PIN_LED_STATUS >= 0
-    gpio_put(PIN_LED_STATUS, state == POWER_STATE_HOST_ON_USB_HCI);
-#endif
-
     switch (state) {
     case POWER_STATE_HOST_OFF:
         if (power_supervisor_pwr_ok() && power_supervisor_usb_vbus_present()) {
@@ -268,4 +294,6 @@ void power_supervisor_task(void) {
         set_state(POWER_STATE_HOST_OFF);
         break;
     }
+
+    update_status_led();
 }
