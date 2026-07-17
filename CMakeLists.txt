@@ -1,10 +1,35 @@
+# == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
+if(WIN32)
+    set(USERHOME $ENV{USERPROFILE})
+else()
+    set(USERHOME $ENV{HOME})
+endif()
+set(sdkVersion 2.3.0)
+set(toolchainVersion 15_2_Rel1)
+set(picotoolVersion 2.3.0)
+set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
+if (EXISTS ${picoVscode})
+    include(${picoVscode})
+endif()
+# ====================================================================================
+
+# Board selection: PICO_W (RP2040) or PICO_2_W (RP2350)
+set(PICO_BOARD_TYPE "PICO_W" CACHE STRING "Board type: PICO_W or PICO_2_W")
+set_property(CACHE PICO_BOARD_TYPE PROPERTY STRINGS PICO_W PICO_2_W)
+
+if(PICO_BOARD_TYPE STREQUAL "PICO_2_W")
+    set(PICO_PLATFORM rp2350 CACHE STRING "Platform selection" FORCE)
+    set(PICO_BOARD pico2_w CACHE STRING "Board type" FORCE)
+else()
+    set(PICO_PLATFORM rp2040 CACHE STRING "Platform selection" FORCE)
+    set(PICO_BOARD pico_w CACHE STRING "Board type" FORCE)
+endif()
+
 cmake_minimum_required(VERSION 3.13)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-set(PICO_BOARD pico2 CACHE STRING "Pico board type")
 
 include(pico_sdk_import.cmake)
 
@@ -42,8 +67,12 @@ set(PIN_ESP32_RESET -1 CACHE STRING "Pico GPIO connected to ESP32 EN/reset, or -
 set(PIN_PWR_OK_SENSE -1 CACHE STRING "Pico GPIO for ATX PWR_OK sense, or -1 to assume on")
 set(PIN_USB_VBUS_SENSE -1 CACHE STRING "Pico GPIO for host USB VBUS sense, or -1 to assume present")
 set(PIN_PWR_BUTTON_OUT -1 CACHE STRING "Pico GPIO for isolated PC power-button pulse, or -1")
+set(PIN_PS_ON_CONTROL -1 CACHE STRING "Pico GPIO for ATX PS_ON control (active low), or -1")
+set(PIN_MOMENTARY_BUTTON -1 CACHE STRING "Pico GPIO for momentary power button wake (active low), or -1")
 set(PIN_LED_STATUS -1 CACHE STRING "Status LED GPIO, or -1")
 set(PIN_LED_FAULT -1 CACHE STRING "Fault LED GPIO, or -1")
+set(PIN_BUZZER -1 CACHE STRING "Pico GPIO for piezoelectric buzzer, or -1")
+set(PIN_POWER_INDICATOR_LED -1 CACHE STRING "External LED indicator (HIGH = PC powered), or -1 to disable")
 
 set(ESP32_HCI_UART_ID 1 CACHE STRING "UART peripheral used by ESP32 HCI transport")
 set(ESP32_HCI_UART_BAUD 921600 CACHE STRING "ESP32 HCI UART baud rate")
@@ -53,10 +82,12 @@ set(USB_BTH_EVENT_EPSIZE 64 CACHE STRING "USB HCI event interrupt endpoint size"
 set(USB_BTH_DATA_EPSIZE 64 CACHE STRING "USB HCI ACL bulk endpoint size")
 set(POWER_BUTTON_PULSE_MS 200 CACHE STRING "PC power-button pulse duration")
 set(POST_WAKE_SENSE_SETTLE_MS 10000 CACHE STRING "Delay after power-button pulse before trusting power sense")
-set(STANDBY_WAKE_ARM_DELAY_MS 60000 CACHE STRING "Delay after PC-off detection before standby Bluetooth wake scanning is armed")
+set(STANDBY_WAKE_ARM_DELAY_MS 5000 CACHE STRING "Delay after PC-off detection before standby Bluetooth wake scanning is armed")
 set(STATUS_LED_BLINK_MS 1000 CACHE STRING "Status LED blink half-period while waiting to arm standby wake")
 set(BOOTSEL_CLEAR_HOLD_MS 5000 CACHE STRING "BOOTSEL hold time for clearing persisted BLE wake peers")
 set(STANDBY_HID_WAKE_KEY 0x68 CACHE STRING "USB HID key usage sent for standby wake, default F13")
+set(MOMENTARY_BUTTON_LONG_PRESS_MS 10000 CACHE STRING "Momentary button long-press threshold in ms for force shutdown detection")
+set(BUZZER_BEEP_MS 500 CACHE STRING "Buzzer beep duration in milliseconds")
 
 if (NOT (ESP32_HCI_UART_ID STREQUAL "0" OR ESP32_HCI_UART_ID STREQUAL "1"))
     message(FATAL_ERROR "ESP32_HCI_UART_ID must be 0 or 1")
@@ -135,8 +166,12 @@ target_compile_definitions(pico-usb-bt-wake PRIVATE
     PIN_PWR_OK_SENSE=${PIN_PWR_OK_SENSE}
     PIN_USB_VBUS_SENSE=${PIN_USB_VBUS_SENSE}
     PIN_PWR_BUTTON_OUT=${PIN_PWR_BUTTON_OUT}
+    PIN_PS_ON_CONTROL=${PIN_PS_ON_CONTROL}
+    PIN_MOMENTARY_BUTTON=${PIN_MOMENTARY_BUTTON}
     PIN_LED_STATUS=${PIN_LED_STATUS}
     PIN_LED_FAULT=${PIN_LED_FAULT}
+    PIN_BUZZER=${PIN_BUZZER}
+    PIN_POWER_INDICATOR_LED=${PIN_POWER_INDICATOR_LED}
     ESP32_HCI_UART_ID=${ESP32_HCI_UART_ID}
     ESP32_HCI_UART_BAUD=${ESP32_HCI_UART_BAUD}
     SYS_CLOCK_KHZ=${SYS_CLOCK_KHZ}
@@ -145,8 +180,10 @@ target_compile_definitions(pico-usb-bt-wake PRIVATE
     POST_WAKE_SENSE_SETTLE_MS=${POST_WAKE_SENSE_SETTLE_MS}
     STANDBY_WAKE_ARM_DELAY_MS=${STANDBY_WAKE_ARM_DELAY_MS}
     STATUS_LED_BLINK_MS=${STATUS_LED_BLINK_MS}
+    MOMENTARY_BUTTON_LONG_PRESS_MS=${MOMENTARY_BUTTON_LONG_PRESS_MS}
     BOOTSEL_CLEAR_HOLD_MS=${BOOTSEL_CLEAR_HOLD_MS}
     STANDBY_HID_WAKE_KEY=${STANDBY_HID_WAKE_KEY}
+    BUZZER_BEEP_MS=${BUZZER_BEEP_MS}
 )
 
 if (HCI_BACKEND STREQUAL "cyw43")
@@ -163,6 +200,7 @@ target_link_libraries(pico-usb-bt-wake
     hardware_gpio
     hardware_uart
     hardware_flash
+    hardware_pwm
     tinyusb_device
     tinyusb_board
     pico_flash
